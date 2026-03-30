@@ -116,10 +116,13 @@ async def on_message(message):
     if "dw" in message.content.lower():
         dw1 = discord.utils.get(message.guild.emojis, name="dw1")
         dw2 = discord.utils.get(message.guild.emojis, name="dw2")
-        if dw1:
-            await message.add_reaction(dw1)
-        if dw2:
-            await message.add_reaction(dw2)
+        try:
+            if dw1:
+                await message.add_reaction(dw1)
+            if dw2:
+                await message.add_reaction(dw2)
+        except discord.NotFound:
+            pass
         await message.channel.send("dw reference")
 
     if "edge" in message.content.lower():
