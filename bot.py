@@ -114,8 +114,8 @@ async def on_message(message):
         await message.add_reaction("🆗")
 
     if "dw" in message.content.lower():
-        dw1 = discord.utils.get(message.guild.emojis, name="approval")
-        dw2 = discord.utils.get(message.guild.emojis, name="disapproval")
+        dw1 = discord.utils.get(message.guild.emojis, name="dw1")
+        dw2 = discord.utils.get(message.guild.emojis, name="dw2")
         try:
             if dw1:
                 await message.add_reaction(dw1)
