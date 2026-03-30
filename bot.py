@@ -113,6 +113,14 @@ async def on_message(message):
     if message.author.id in REACT_USER_IDS:
         await message.add_reaction("🆗")
 
+    if "cp" in message.content.lower():
+        cp = discord.utils.get(message.guild.emojis, name="umcpc")
+        try:
+            if cp:
+                await message.add_reaction(cp)
+        except discord.NotFound:
+            pass
+
     if "dw" in message.content.lower():
         dw1 = discord.utils.get(message.guild.emojis, name="dw1")
         dw2 = discord.utils.get(message.guild.emojis, name="dw2")
