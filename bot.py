@@ -64,7 +64,7 @@ def next_occurrence(day: str, time_str: str) -> datetime:
 def restart_loop(day: str, time_str: str):
     """Stop the running loop (if any) and restart it with new timing."""
     if weekly_ping.is_running():
-        weekly_ping.stop()
+        weekly_ping.cancel()
     weekly_ping.change_interval(time=parse_ping_time(time_str))
     weekly_ping.start()
 
