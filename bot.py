@@ -98,7 +98,7 @@ async def weekly_ping():
 
 # ── Bot setup ──────────────────────────────────────────────────────────────────
 
-REACT_USER_IDS = {436283361988837398, 1476536749168787600, 699941497558138900}
+REACT_USER_IDS = {436283361988837398, 1476536749168787600}
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -117,6 +117,16 @@ async def on_message(message):
             await message.add_reaction(dw1)
         if dw2:
             await message.add_reaction(dw2)
+        await message.channel.send("dw reference")
+
+    if "edge" in message.content.lower():
+        await message.channel.send("edge reference")
+
+    if "honey" in message.content.lower():
+        await message.channel.send("honey reference")
+
+    if "mobile" in message.content.lower():
+        await message.channel.send("mobile reference")
 
     await bot.process_commands(message)  # still handle commands normally
 
