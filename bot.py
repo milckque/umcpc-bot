@@ -158,10 +158,21 @@ async def meeting_reminder(ctx):
     )
 
 
+def has_committee_role():
+    async def predicate(ctx):
+        role = discord.utils.get(ctx.guild.roles, name="committee")
+        if role is None:
+            raise commands.CheckFailure("No role named 'committee' found in this server.")
+        if role in ctx.author.roles:
+            return True
+        raise commands.CheckFailure("You need the @committee role to set the meeting time.")
+    return commands.check(predicate)
+
+
 @meeting.command(name="set")
-@commands.has_permissions(administrator=True)
+@has_committee_role()
 async def meeting_set(ctx, day: str = None, meeting_time: str = None):
-    """Set the weekly meeting ping. Admin only.
+    """Set the weekly meeting ping. Requires @committee role.
     Usage: !cp meeting set <day> <HH:MM>
     Example: !cp meeting set monday 18:00
     """
@@ -193,8 +204,7 @@ async def meeting_set(ctx, day: str = None, meeting_time: str = None):
 
 @meeting_set.error
 async def meeting_set_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You need Administrator permissions to set the meeting time.")
+    await ctx.send(f"❌ {error}")
 
 
 @bot.command(name="testping")
