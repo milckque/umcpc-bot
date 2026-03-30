@@ -211,12 +211,18 @@ async def meeting_set_error(ctx, error):
 @commands.has_permissions(administrator=True)
 async def test_ping(ctx):
     """Manually trigger the ping right now (admin only)."""
+    channel = bot.get_channel(CHANNEL_ID)
     role = ctx.guild.get_role(ROLE_ID)
-    if role is None:
-        await ctx.send("❌ Could not find the configured role.")
+
+    if channel is None:
+        await ctx.send(f"❌ Could not find channel with ID `{CHANNEL_ID}`.")
         return
-    await ctx.send(f"{role.mention} {MESSAGE} *(test ping)*")
-    await ctx.message.delete()
+    if role is None:
+        await ctx.send(f"❌ Could not find role with ID `{ROLE_ID}`.")
+        return
+
+    await ctx.send(f"📣 Sending ping to #{channel.name} for @{role.name}...")
+    await channel.send(f"{role.mention} {MESSAGE} *(test ping)*")
 
 
 bot.run(TOKEN)
