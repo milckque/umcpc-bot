@@ -99,6 +99,7 @@ async def weekly_ping():
 # ── Bot setup ──────────────────────────────────────────────────────────────────
 
 REACT_USER_IDS = {436283361988837398, 1476536749168787600}
+RICHARD_USER_ID = 444756368398876673
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -112,6 +113,9 @@ async def on_message(message):
     
     if message.author.id in REACT_USER_IDS:
         await message.add_reaction("🆗")
+
+    if message.author.id == RICHARD_USER_ID:
+        await message.add_reaction("🐈")
 
     if "cp" in message.content.lower():
         cp = discord.utils.get(message.guild.emojis, name="umcpc")
@@ -160,6 +164,12 @@ async def on_message(message):
         except discord.NotFound:
             pass
         await message.channel.send("lionel reference")
+
+    if "richard" in message.content.lower():
+        try:
+            await message.add_reaction("😼")
+        except discord.NotFound:
+            pass
 
     if "seg" in message.content.lower():
         approval = discord.utils.get(message.guild.emojis, name="approval")
