@@ -134,6 +134,12 @@ async def on_message(message):
         except discord.NotFound:
             pass
 
+    if "sean" in message.content.lower():
+        try:
+            await message.add_reaction("🐐")
+        except discord.NotFound:
+            pass
+
     if "honey" in message.content.lower():
         await message.channel.send("honey reference")
 
