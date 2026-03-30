@@ -98,9 +98,18 @@ async def weekly_ping():
 
 # ── Bot setup ──────────────────────────────────────────────────────────────────
 
+REACT_USER_IDS = {436283361988837398, 1476536749168787600, 699941497558138900}
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_message(message):
+    if message.author.id in REACT_USER_IDS:
+        await message.add_reaction("🆗")
+    await bot.process_commands(message)  # still handle commands normally
 
 
 @bot.event
