@@ -109,6 +109,15 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_message(message):
     if message.author.id in REACT_USER_IDS:
         await message.add_reaction("🆗")
+
+    if "dw" in message.content.lower():
+        dw1 = discord.utils.get(message.guild.emojis, name="dw1")
+        dw2 = discord.utils.get(message.guild.emojis, name="dw2")
+        if dw1:
+            await message.add_reaction(dw1)
+        if dw2:
+            await message.add_reaction(dw2)
+
     await bot.process_commands(message)  # still handle commands normally
 
 
