@@ -114,8 +114,8 @@ async def on_message(message):
         await message.add_reaction("🆗")
 
     if "dw" in message.content.lower():
-        dw1 = discord.utils.get(message.guild.emojis, name="dw1")
-        dw2 = discord.utils.get(message.guild.emojis, name="dw2")
+        dw1 = discord.utils.get(message.guild.emojis, name="approval")
+        dw2 = discord.utils.get(message.guild.emojis, name="disapproval")
         try:
             if dw1:
                 await message.add_reaction(dw1)
@@ -133,6 +133,46 @@ async def on_message(message):
 
     if "mobile" in message.content.lower():
         await message.channel.send("mobile reference")
+
+    if "lion" in message.content.lower():
+        grape = discord.utils.get(message.guild.emojis, name="grapes")
+        try:
+            if grape:
+                await message.add_reaction(grape)
+        except discord.NotFound:
+            pass
+        await message.channel.send("lionel reference")
+
+    if "seg" in message.content.lower():
+        approval = discord.utils.get(message.guild.emojis, name="approval")
+        disapproval = discord.utils.get(message.guild.emojis, name="disapproval")
+        ditto = discord.utils.get(message.guild.emojis, name="ditto")
+        segment_tree = discord.utils.get(message.guild.emojis, name="segment_tree")
+        salute = discord.utils.get(message.guild.emojis, name="salute")
+        segmund = discord.utils.get(message.guild.emojis, name="segmund")
+        segmund_cool = discord.utils.get(message.guild.emojis, name="segmund_cool")
+        segmund_wow = discord.utils.get(message.guild.emojis, name="segmund_wow")
+
+        try:
+            if approval:
+                await message.add_reaction(approval)
+            if disapproval:
+                await message.add_reaction(disapproval)
+            if ditto:
+                await message.add_reaction(ditto)
+            if segment_tree:
+                await message.add_reaction(segment_tree)
+            if salute:
+                await message.add_reaction(salute)
+            if segmund:
+                await message.add_reaction(segmund) 
+            if segmund_cool:
+                await message.add_reaction(segmund_cool)
+            if segmund_wow:
+                await message.add_reaction(segmund_wow)
+        except discord.NotFound:
+            pass
+        await message.channel.send("segmund reference")
 
     await bot.process_commands(message)  # still handle commands normally
 
