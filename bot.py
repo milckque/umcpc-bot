@@ -128,6 +128,12 @@ async def on_message(message):
     if "edge" in message.content.lower():
         await message.channel.send("edge reference")
 
+    if "bryan" in message.content.lower():
+        try:
+            await message.add_reaction("🆗")
+        except discord.NotFound:
+            pass
+
     if "honey" in message.content.lower():
         await message.channel.send("honey reference")
 
