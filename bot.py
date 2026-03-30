@@ -101,6 +101,13 @@ async def weekly_ping():
 REACT_USER_IDS = {436283361988837398, 1476536749168787600}
 RICHARD_USER_ID = 444756368398876673
 
+# Channels where every message gets reacted with all the listed emojis
+REACT_CHANNEL_IDS = {625932784665624606, 1070933255790022747}
+REACT_CHANNEL_EMOJI_NAMES = [
+    "approval", "disapproval", "ditto", "salute", "segment_tree",
+    "segmund", "segmund_cool", "segmund_wow", "umcpc", "bleh", "honest_reaction",
+]
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -110,7 +117,17 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_message(message):
     if message.author.bot:
         return
-    
+
+    # React to every message in specific channels
+    if message.channel.id in REACT_CHANNEL_IDS:
+        for name in REACT_CHANNEL_EMOJI_NAMES:
+            emoji = discord.utils.get(message.guild.emojis, name=name)
+            try:
+                if emoji:
+                    await message.add_reaction(emoji)
+            except discord.NotFound:
+                pass
+
     if message.author.id in REACT_USER_IDS:
         await message.add_reaction("🆗")
 
@@ -193,7 +210,7 @@ async def on_message(message):
             if salute:
                 await message.add_reaction(salute)
             if segmund:
-                await message.add_reaction(segmund) 
+                await message.add_reaction(segmund)
             if segmund_cool:
                 await message.add_reaction(segmund_cool)
             if segmund_wow:
