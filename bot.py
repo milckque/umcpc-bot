@@ -107,6 +107,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_message(message):
+    if message.author.bot:
+        return
+    
     if message.author.id in REACT_USER_IDS:
         await message.add_reaction("🆗")
 
