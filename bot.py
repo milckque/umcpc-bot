@@ -135,10 +135,8 @@ async def on_message(message):
         await message.channel.send("mobile reference")
 
     if "lion" in message.content.lower():
-        grape = discord.utils.get(message.guild.emojis, name="grapes")
         try:
-            if grape:
-                await message.add_reaction(grape)
+            await message.add_reaction("🍇")
         except discord.NotFound:
             pass
         await message.channel.send("lionel reference")
