@@ -111,7 +111,11 @@ REACT_CHANNEL_EMOJI_NAMES = [
 intents = discord.Intents.default()
 intents.message_content = True
 
+HONEY_USER_ID = 813660527791177728
+
 async def get_prefix(bot, message):
+    if message.author.id == HONEY_USER_ID and bot.user in message.mentions:
+        await message.channel.send("eeeewwwww i hate honey")
     return commands.when_mentioned(bot, message)
 
 bot = commands.Bot(command_prefix=get_prefix, intents=intents)
