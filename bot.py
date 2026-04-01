@@ -170,6 +170,10 @@ async def on_message(message):
             pass
 
     if "honey" in message.content.lower():
+        try:
+            await message.add_reaction("🐝🍯")
+        except discord.NotFound:
+            pass
         await message.channel.send("honey reference")
 
     if "mobile" in message.content.lower():
