@@ -265,14 +265,9 @@ async def on_ready():
 
 # ── Commands ───────────────────────────────────────────────────────────────────
 
-@bot.group(name="cp", invoke_without_command=True)
-async def cp(ctx):
-    await ctx.send("Usage: `!cp meeting reminder` or `!cp meeting set <day> <HH:MM>`")
-
-
-@cp.group(name="meeting", invoke_without_command=True)
+@bot.group(name="meeting", invoke_without_command=True)
 async def meeting(ctx):
-    await ctx.send("Usage: `!cp meeting reminder` or `!cp meeting set <day> <HH:MM>`")
+    await ctx.send("Usage: `@segmund meeting reminder` or `@segmund meeting set <day> <HH:MM>`")
 
 
 @meeting.command(name="reminder")
@@ -280,7 +275,7 @@ async def meeting_reminder(ctx):
     """Show when the next meeting ping will fire."""
     data = load_meeting()
     if data is None:
-        await ctx.send("❌ No meeting is scheduled yet. Use `!cp meeting set <day> <HH:MM>` to set one.")
+        await ctx.send("❌ No meeting is scheduled yet. Use `@segmund meeting set <day> <HH:MM>` to set one.")
         return
 
     nxt = next_occurrence(data["day"], data["time"])
@@ -322,11 +317,11 @@ def has_committee_role():
 @has_committee_role()
 async def meeting_set(ctx, day: str = None, meeting_time: str = None):
     """Set the weekly meeting ping. Requires @committee role.
-    Usage: !cp meeting set <day> <HH:MM>
-    Example: !cp meeting set monday 18:00
+    Usage: @segmund meeting set <day> <HH:MM>
+    Example: @segmund meeting set monday 18:00
     """
     if day is None or meeting_time is None:
-        await ctx.send("Usage: `!cp meeting set <day> <HH:MM>`\nExample: `!cp meeting set monday 18:00`")
+        await ctx.send("Usage: `@segmund meeting set <day> <HH:MM>`\nExample: `@segmund meeting set monday 18:00`")
         return
 
     day = day.lower()
