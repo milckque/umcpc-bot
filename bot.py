@@ -110,7 +110,11 @@ REACT_CHANNEL_EMOJI_NAMES = [
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+async def get_prefix(bot, message):
+    return commands.when_mentioned(bot, message)
+
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 
 
 @bot.event
