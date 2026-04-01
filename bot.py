@@ -182,6 +182,28 @@ async def on_message(message):
             pass
         await message.channel.send("lionel reference")
 
+    if "maps" in message.content.lower() 
+        try:
+            await message.add_reaction("👎")
+        except discord.NotFound:
+            pass
+        await message.channel.send("ewwwww maps 🤢")
+
+    if "unsw" in message.content.lower() 
+        try:
+            await message.add_reaction("👎")
+        except discord.NotFound:
+            pass
+        await message.channel.send("ewwwww unsw 🤢")
+
+    if "cissa" in message.content.lower() 
+        try:
+            await message.add_reaction("👎")
+        except discord.NotFound:
+            pass
+        await message.channel.send("ewwwww cisrael 🤢")
+
+
     if "richard" in message.content.lower():
         try:
             await message.add_reaction("😼")
