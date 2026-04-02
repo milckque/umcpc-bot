@@ -1,3 +1,4 @@
+import random
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta
@@ -108,8 +109,15 @@ REACT_CHANNEL_EMOJI_NAMES = [
     "segmund", "segmund_cool", "segmund_wow", "umcpc", "bleh", "honest_reaction",
 ]
 
+WELCOME_CHANNEL_ID = 625922671598764035
+WELCOME_EMOJI_NAMES = [
+    "approval", "ditto", "salute", "segment_tree",
+    "segmund", "segmund_cool", "segmund_wow", "bleh", "honest_reaction",
+]
+
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # required for on_member_join
 
 HONEY_USER_ID = 813660527791177728
 
@@ -254,6 +262,19 @@ async def on_message(message):
         await message.channel.send("segmund reference")
 
     await bot.process_commands(message)  # still handle commands normally
+
+
+@bot.event
+async def on_member_join(member):
+    channel = bot.get_channel(WELCOME_CHANNEL_ID)
+    if channel is None:
+        return
+
+    emoji_name = random.choice(WELCOME_EMOJI_NAMES)
+    emoji = discord.utils.get(member.guild.emojis, name=emoji_name)
+    emoji_str = str(emoji) if emoji else "👋"
+
+    await channel.send(f"{member.mention} welcome to UMCPC {emoji_str}")
 
 
 @bot.event
