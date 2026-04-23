@@ -1,4 +1,5 @@
 import random
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta
@@ -16,6 +17,20 @@ TIMEZONE = os.getenv("TIMEZONE", "Australia/Melbourne")
 MESSAGE = os.getenv("MESSAGE", "Weekly reminder!")
 
 DATA_FILE = "meetings.json"
+CLUB_FILE = "club_info.json"
+
+COMMITTEE = [
+    {"role": "President",      "name": "Qirui (David) Wang"},
+    {"role": "Vice President", "name": "Honey Raut"},
+    {"role": "Secretary",      "name": "Yunnuo (Lionel) Liu"},
+    {"role": "Treasurer",      "name": "Jummana Shim"},
+]
+
+ABOUT_TEXT = (
+    "Our club is home to all of the University of Melbourne's competitive programming endeavours! "
+    "We aim to impart a strong understanding of algorithms and data structures that are both fun "
+    "and key to a successful future in the tech industry!"
+)
 
 DAY_MAP = {
     "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -35,6 +50,18 @@ def load_meeting() -> dict | None:
 def save_meeting(day: str, time_str: str):
     with open(DATA_FILE, "w") as f:
         json.dump({"day": day, "time": time_str}, f)
+
+
+def load_club_info() -> dict:
+    if not os.path.exists(CLUB_FILE):
+        return {"events": [], "sponsors": []}
+    with open(CLUB_FILE) as f:
+        return json.load(f)
+
+
+def save_club_info(data: dict):
+    with open(CLUB_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 # ── Scheduling helpers ─────────────────────────────────────────────────────────
@@ -149,6 +176,14 @@ async def on_message(message):
 
     if message.author.id == RICHARD_USER_ID:
         await message.add_reaction("🐈")
+
+    content_lower = message.content.lower()
+    if "67" in content_lower or "sixseven" in content_lower or "six seven" in content_lower:
+        try:
+            await message.add_reaction("6️⃣")
+            await message.add_reaction("7️⃣")
+        except discord.NotFound:
+            pass
 
     if "cp" in message.content.lower():
         cp = discord.utils.get(message.guild.emojis, name="umcpc")
@@ -392,6 +427,88 @@ async def test_ping(ctx):
 
     await ctx.send(f"📣 Sending ping to #{channel.name} for @{role.name}...")
     await channel.send(f"{role.mention} {MESSAGE} *(test ping)*")
+
+
+@bot.command(name="about")
+async def about(ctx):
+    """About UMCPC."""
+    embed = discord.Embed(title="About UMCPC", description=ABOUT_TEXT, color=0x1D82B5)
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="committee")
+async def committee(ctx):
+    """List the current committee members."""
+    embed = discord.Embed(title="UMCPC Committee", color=0x1D82B5)
+    for member in COMMITTEE:
+        embed.add_field(name=member["role"], value=member["name"], inline=False)
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="events")
+async def events(ctx):
+    """List upcoming events."""
+    data = load_club_info()
+    upcoming = data.get("events", [])
+    if not upcoming:
+        await ctx.send("No upcoming events at the moment. Check back soon!")
+        return
+    embed = discord.Embed(title="Upcoming Events", color=0x1D82B5)
+    for event in upcoming:
+        value = event.get("description", "")
+        if event.get("date"):
+            value = f"📅 {event['date']}" + (f"\n{value}" if value else "")
+        embed.add_field(name=event["name"], value=value or "​", inline=False)
+    await ctx.send(embed=embed)
+
+
+SPONSORS_URL = "https://umcpc.club/sponsors/sponsors.json"
+TIER_ORDER = ["Diamond", "Gold", "Silver", "Bronze", "Community Partner"]
+
+@bot.command(name="sponsors")
+async def sponsors(ctx):
+    """List club sponsors, fetched live from umcpc.club."""
+    sponsor_list = None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(SPONSORS_URL, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    sponsor_list = await resp.json(content_type=None)
+    except Exception:
+        pass
+
+    if sponsor_list is None:
+        data = load_club_info()
+        sponsor_list = [
+            {"name": s["name"], "tier": s.get("description", ""), "blurb": ""}
+            for s in data.get("sponsors", [])
+        ]
+
+    if not sponsor_list:
+        await ctx.send("No sponsors listed yet.")
+        return
+
+    by_tier = {}
+    for s in sponsor_list:
+        tier = s.get("tier", "Other")
+        by_tier.setdefault(tier, []).append(s)
+
+    embed = discord.Embed(
+        title="UMCPC Sponsors",
+        description="Thank you to all our sponsors! 🎉",
+        color=0x1D82B5,
+    )
+    for tier in TIER_ORDER + [t for t in by_tier if t not in TIER_ORDER]:
+        if tier not in by_tier:
+            continue
+        names = "\n".join(
+            f"[{s['name']}]({s['url']})" if s.get("url") else s["name"]
+            for s in by_tier[tier]
+        )
+        embed.add_field(name=f"__{tier}__", value=names, inline=False)
+
+    embed.set_footer(text="umcpc.club/sponsors")
+    await ctx.send(embed=embed)
 
 
 bot.run(TOKEN)
