@@ -1,8 +1,9 @@
 import random
+import re
 import aiohttp
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import pytz
 import os
 import json
@@ -18,6 +19,10 @@ MESSAGE = os.getenv("MESSAGE", "Weekly reminder!")
 
 DATA_FILE = "meetings.json"
 CLUB_FILE = "club_info.json"
+STRIKES_FILE = "strikes.json"
+BAD_WORDS_URL = "https://raw.githubusercontent.com/awdev1/better-profane-words/main/words.json"
+
+_bad_words_pattern: re.Pattern | None = None
 
 COMMITTEE = [
     {"role": "President",      "name": "Qirui (David) Wang"},
@@ -52,6 +57,33 @@ def save_meeting(day: str, time_str: str):
         json.dump({"day": day, "time": time_str}, f)
 
 
+def load_strikes() -> dict:
+    if not os.path.exists(STRIKES_FILE):
+        return {}
+    with open(STRIKES_FILE) as f:
+        return json.load(f)
+
+
+def save_strikes(data: dict):
+    with open(STRIKES_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+async def fetch_bad_words():
+    global _bad_words_pattern
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BAD_WORDS_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    words = [entry["word"] for entry in data if "word" in entry]
+                    pattern = "|".join(re.escape(w) for w in words)
+                    _bad_words_pattern = re.compile(rf"\b({pattern})\b", re.IGNORECASE)
+                    print(f"[moderation] Loaded {len(words)} bad words.")
+    except Exception as e:
+        print(f"[moderation] Failed to fetch bad words: {e}")
+
+
 def load_club_info() -> dict:
     if not os.path.exists(CLUB_FILE):
         return {"events": [], "sponsors": []}
@@ -69,7 +101,8 @@ def save_club_info(data: dict):
 def parse_ping_time(time_str: str) -> time:
     h, m = map(int, time_str.split(":"))
     tz = pytz.timezone(TIMEZONE)
-    return time(h, m, tzinfo=tz)
+    utc_offset = datetime.now(tz).utcoffset()
+    return time(h, m, tzinfo=timezone(utc_offset))
 
 
 def next_occurrence(day: str, time_str: str) -> datetime:
@@ -147,13 +180,14 @@ intents.message_content = True
 intents.members = True  # required for on_member_join
 
 HONEY_USER_ID = 813660527791177728
+COMMITTEE_ROLE_ID = 625923345942052864
 
 async def get_prefix(bot, message):
     if message.author.id == HONEY_USER_ID and bot.user in message.mentions:
         await message.channel.send("eeeewwwww i hate honey")
     return commands.when_mentioned(bot, message)
 
-bot = commands.Bot(command_prefix=get_prefix, intents=intents)
+bot = commands.Bot(command_prefix=get_prefix, intents=intents, help_command=None)
 
 
 @bot.event
@@ -178,6 +212,21 @@ async def on_message(message):
         await message.add_reaction("🐈")
 
     content_lower = message.content.lower()
+
+    if _bad_words_pattern and _bad_words_pattern.search(message.content):
+        strikes = load_strikes()
+        uid = str(message.author.id)
+        strikes[uid] = strikes.get(uid, 0) + 1
+        save_strikes(strikes)
+
+        screep = discord.utils.get(message.guild.emojis, name="screep")
+        screep_str = str(screep) if screep else "⚠️"
+
+        if strikes[uid] >= 3:
+            await message.channel.send(f"FINAL WARNING {screep_str} {screep_str} {screep_str}")
+        else:
+            await message.channel.send(f"{screep_str} Strike #{strikes[uid]}")
+
     if "67" in content_lower or "sixseven" in content_lower or "six seven" in content_lower:
         try:
             await message.add_reaction("6️⃣")
@@ -269,11 +318,11 @@ async def on_message(message):
         approval = discord.utils.get(message.guild.emojis, name="approval")
         disapproval = discord.utils.get(message.guild.emojis, name="disapproval")
         ditto = discord.utils.get(message.guild.emojis, name="ditto")
-        segment_tree = discord.utils.get(message.guild.emojis, name="segment_tree")
+        segment_tree = discord.utils.get(message.guild.emojis, name="s_tree")
         salute = discord.utils.get(message.guild.emojis, name="salute")
         segmund = discord.utils.get(message.guild.emojis, name="segmund")
-        segmund_cool = discord.utils.get(message.guild.emojis, name="segmund_cool")
-        segmund_wow = discord.utils.get(message.guild.emojis, name="segmund_wow")
+        segmund_cool = discord.utils.get(message.guild.emojis, name="s_cool")
+        segmund_wow = discord.utils.get(message.guild.emojis, name="s_wow")
 
         try:
             if approval:
@@ -315,6 +364,7 @@ async def on_member_join(member):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    await fetch_bad_words()
     meeting = load_meeting()
     if meeting:
         restart_loop(meeting["day"], meeting["time"])
@@ -364,10 +414,9 @@ async def meeting_reminder(ctx):
 
 def has_committee_role():
     async def predicate(ctx):
-        role = discord.utils.get(ctx.guild.roles, name="committee")
-        if role is None:
-            raise commands.CheckFailure("No role named 'committee' found in this server.")
-        if role in ctx.author.roles:
+        if ctx.author.guild_permissions.administrator:
+            return True
+        if any(r.id == COMMITTEE_ROLE_ID for r in ctx.author.roles):
             return True
         raise commands.CheckFailure("You need the @committee role to set the meeting time.")
     return commands.check(predicate)
@@ -508,6 +557,42 @@ async def sponsors(ctx):
         embed.add_field(name=f"__{tier}__", value=names, inline=False)
 
     embed.set_footer(text="umcpc.club/sponsors")
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="help")
+async def help_command(ctx):
+    embed = discord.Embed(
+        title="Segmund — UMCPC Bot",
+        description="Here's what I can do! Use `@segmund <command>`.",
+        color=0x1D82B5,
+    )
+
+    embed.add_field(
+        name="📖  Club Info",
+        value=(
+            "`about` — What is UMCPC?\n"
+            "`committee` — Meet the current committee\n"
+            "`events` — Upcoming events\n"
+            "`sponsors` — Our sponsors"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="📅  Meetings",
+        value=(
+            "`meeting reminder` — Time until the next meeting ping\n"
+            "`meeting set <day> <HH:MM>` — Set the weekly ping *(committee only)*"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🔧  Admin",
+        value="`testping` — Manually fire the meeting ping *(admin only)*",
+        inline=False,
+    )
+
+    embed.set_footer(text="umcpc.club  •  @segmund help")
     await ctx.send(embed=embed)
 
 
