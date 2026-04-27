@@ -162,7 +162,7 @@ async def reminder_loop():
 
         role = channel.guild.get_role(meeting.get("role_id", ROLE_ID))
         mention = role.mention if role else ""
-
+        
         h, m = map(int, meeting["time"].split(":"))
         meeting_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
         early_dt = meeting_dt - timedelta(minutes=5)
