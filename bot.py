@@ -73,7 +73,12 @@ def load_strikes() -> dict:
     if not os.path.exists(STRIKES_FILE):
         return {}
     with open(STRIKES_FILE) as f:
-        return json.load(f)
+        data = json.load(f)
+    # Migrate old {uid: int} format
+    return {
+        uid: val if isinstance(val, dict) else {"count": val, "timeout_until": None}
+        for uid, val in data.items()
+    }
 
 
 def save_strikes(data: dict):
@@ -238,16 +243,41 @@ async def on_message(message):
     if _bad_words_pattern and _bad_words_pattern.search(message.content):
         strikes = load_strikes()
         uid = str(message.author.id)
-        strikes[uid] = strikes.get(uid, 0) + 1
+        entry = strikes.get(uid, {"count": 0, "timeout_until": None})
+        entry["count"] += 1
+        strikes[uid] = entry
         save_strikes(strikes)
 
+        count = entry["count"]
         screep = discord.utils.get(message.guild.emojis, name="screep")
         screep_str = str(screep) if screep else "⚠️"
+        is_committee = any(r.id == COMMITTEE_ROLE_ID for r in message.author.roles)
 
-        if strikes[uid] >= 3:
+        if count >= 5 and not is_committee:
+            today = datetime.now(pytz.timezone(TIMEZONE)).strftime("%Y-%m-%d")
+            if entry.get("timeout_until") == today:
+                await message.channel.send(
+                    f"{message.author.mention} has been kicked for repeated offences. {screep_str}"
+                )
+                try:
+                    await message.author.kick(reason="Struck again on the day of unban")
+                except discord.Forbidden:
+                    pass
+            else:
+                timeout_until = (datetime.now(pytz.timezone(TIMEZONE)) + timedelta(days=3)).strftime("%Y-%m-%d")
+                entry["timeout_until"] = timeout_until
+                save_strikes(strikes)
+                await message.channel.send(
+                    f"{message.author.mention} has been timed out for 3 days. {screep_str} {screep_str} {screep_str}"
+                )
+                try:
+                    await message.author.timeout(timedelta(days=3), reason="5+ strikes for bad words")
+                except discord.Forbidden:
+                    pass
+        elif count == 4:
             await message.channel.send(f"FINAL WARNING {screep_str} {screep_str} {screep_str}")
         else:
-            await message.channel.send(f"{screep_str} Strike #{strikes[uid]}")
+            await message.channel.send(f"{screep_str} Strike #{count}")
 
     if "67" in content_lower or "sixseven" in content_lower or "six seven" in content_lower:
         try:
@@ -700,12 +730,54 @@ async def help_command(ctx):
     )
     embed.add_field(
         name="🔧  Admin",
-        value="`testping` — Manually fire the meeting ping *(admin only)*",
+        value=(
+            "`testping` — Manually fire the meeting ping *(admin only)*\n"
+            "`strikes` — Show all members with strikes *(committee only)*"
+        ),
         inline=False,
     )
 
     embed.set_footer(text="umcpc.club  •  @segmund help")
     await ctx.send(embed=embed)
+
+
+@bot.command(name="strikes")
+@has_committee_role()
+async def strikes_command(ctx):
+    """Show all members with strikes."""
+    data = load_strikes()
+    if not data:
+        await ctx.send("No strikes on record.")
+        return
+
+    embed = discord.Embed(title="Strike Records", color=0xFF4444)
+    tz = pytz.timezone(TIMEZONE)
+    today = datetime.now(tz).strftime("%Y-%m-%d")
+
+    for uid, entry in sorted(data.items(), key=lambda x: x[1]["count"], reverse=True):
+        member = ctx.guild.get_member(int(uid))
+        name = member.display_name if member else f"Unknown ({uid})"
+        count = entry["count"]
+        timeout_until = entry.get("timeout_until")
+
+        if timeout_until and timeout_until >= today:
+            status = f"🔇 Timed out until {timeout_until}"
+        elif timeout_until:
+            status = f"✅ Unban day was {timeout_until}"
+        else:
+            status = ""
+
+        value = f"**{count}** strike{'s' if count != 1 else ''}"
+        if status:
+            value += f"\n{status}"
+        embed.add_field(name=name, value=value, inline=True)
+
+    await ctx.send(embed=embed)
+
+
+@strikes_command.error
+async def strikes_error(ctx, error):
+    await ctx.send(f"❌ {error}")
 
 
 bot.run(TOKEN)
