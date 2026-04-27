@@ -253,9 +253,9 @@ async def on_message(message):
         screep_str = str(screep) if screep else "⚠️"
         is_committee = any(r.id == COMMITTEE_ROLE_ID for r in message.author.roles)
 
-        if count >= 5 and not is_committee:
+        if count >= 5:
             today = datetime.now(pytz.timezone(TIMEZONE)).strftime("%Y-%m-%d")
-            if entry.get("timeout_until") == today:
+            if not is_committee and entry.get("timeout_until") == today:
                 await message.channel.send(
                     f"{message.author.mention} has been kicked for repeated offences. {screep_str}"
                 )
@@ -264,14 +264,16 @@ async def on_message(message):
                 except discord.Forbidden:
                     pass
             else:
-                timeout_until = (datetime.now(pytz.timezone(TIMEZONE)) + timedelta(days=3)).strftime("%Y-%m-%d")
+                duration = timedelta(days=1) if is_committee else timedelta(days=3)
+                duration_str = "1 day" if is_committee else "3 days"
+                timeout_until = (datetime.now(pytz.timezone(TIMEZONE)) + duration).strftime("%Y-%m-%d")
                 entry["timeout_until"] = timeout_until
                 save_strikes(strikes)
                 await message.channel.send(
-                    f"{message.author.mention} has been timed out for 3 days. {screep_str} {screep_str} {screep_str}"
+                    f"{message.author.mention} has been timed out for {duration_str}. {screep_str} {screep_str} {screep_str}"
                 )
                 try:
-                    await message.author.timeout(timedelta(days=3), reason="5+ strikes for bad words")
+                    await message.author.timeout(duration, reason=f"5+ strikes for bad words")
                 except discord.Forbidden:
                     pass
         elif count == 4:
@@ -731,6 +733,7 @@ async def help_command(ctx):
     embed.add_field(
         name="🔧  Admin",
         value=(
+            "`mystrike` — Check your own strike count\n"
             "`testping` — Manually fire the meeting ping *(admin only)*\n"
             "`strikes` — Show all members with strikes *(committee only)*"
         ),
@@ -778,6 +781,31 @@ async def strikes_command(ctx):
 @strikes_command.error
 async def strikes_error(ctx, error):
     await ctx.send(f"❌ {error}")
+
+
+@bot.command(name="mystrike")
+async def mystrike(ctx):
+    """Check your own strike count."""
+    data = load_strikes()
+    uid = str(ctx.author.id)
+    entry = data.get(uid)
+
+    if not entry or entry["count"] == 0:
+        await ctx.send(f"{ctx.author.mention} You have no strikes. Keep it clean! ✅", ephemeral=True)
+        return
+
+    count = entry["count"]
+    timeout_until = entry.get("timeout_until")
+    tz = pytz.timezone(TIMEZONE)
+    today = datetime.now(tz).strftime("%Y-%m-%d")
+
+    lines = [f"You have **{count}** strike{'s' if count != 1 else ''}."]
+    if timeout_until and timeout_until >= today:
+        lines.append(f"🔇 You are timed out until **{timeout_until}**.")
+    elif timeout_until:
+        lines.append(f"⚠️ You were previously timed out (unban day: {timeout_until}). One more strike today = kick.")
+
+    await ctx.send(f"{ctx.author.mention} " + " ".join(lines), ephemeral=True)
 
 
 bot.run(TOKEN)
