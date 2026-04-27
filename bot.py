@@ -3,7 +3,7 @@ import re
 import aiohttp
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta
 import pytz
 import os
 import json
@@ -24,12 +24,17 @@ BAD_WORDS_URL = "https://raw.githubusercontent.com/awdev1/better-profane-words/m
 
 _bad_words_pattern: re.Pattern | None = None
 
-COMMITTEE = [
-    {"role": "President",      "name": "Qirui (David) Wang"},
-    {"role": "Vice President", "name": "Honey Raut"},
-    {"role": "Secretary",      "name": "Yunnuo (Lionel) Liu"},
-    {"role": "Treasurer",      "name": "Jummana Shim"},
-]
+COMMITTEE_URL = "https://umcpc.club/api/committee"
+
+COMMITTEE_FALLBACK = {
+    "executives": [
+        {"title": "President",      "name": "Qirui (David) Wang"},
+        {"title": "Vice President", "name": "Honey Raut"},
+        {"title": "Secretary",      "name": "Yunnuo (Lionel) Liu"},
+        {"title": "Treasurer",      "name": "Jummana Shim"},
+    ],
+    "general": [],
+}
 
 ABOUT_TEXT = (
     "Our club is home to all of the University of Melbourne's competitive programming endeavours! "
@@ -44,17 +49,24 @@ DAY_MAP = {
 
 # ── Persistence ────────────────────────────────────────────────────────────────
 
-def load_meeting() -> dict | None:
-    """Load meeting config from disk. Returns None if not set."""
+def load_meetings() -> list:
     if not os.path.exists(DATA_FILE):
-        return None
+        return []
     with open(DATA_FILE) as f:
-        return json.load(f)
+        data = json.load(f)
+    # Migrate old single-meeting format
+    if isinstance(data, dict):
+        return [{"id": 1, "day": data["day"], "time": data["time"], "repeat": True, "role_id": ROLE_ID}]
+    return data
 
 
-def save_meeting(day: str, time_str: str):
+def save_meetings(meetings: list):
     with open(DATA_FILE, "w") as f:
-        json.dump({"day": day, "time": time_str}, f)
+        json.dump(meetings, f, indent=2)
+
+
+def next_meeting_id(meetings: list) -> int:
+    return max((m["id"] for m in meetings), default=0) + 1
 
 
 def load_strikes() -> dict:
@@ -98,15 +110,7 @@ def save_club_info(data: dict):
 
 # ── Scheduling helpers ─────────────────────────────────────────────────────────
 
-def parse_ping_time(time_str: str) -> time:
-    h, m = map(int, time_str.split(":"))
-    tz = pytz.timezone(TIMEZONE)
-    utc_offset = datetime.now(tz).utcoffset()
-    return time(h, m, tzinfo=timezone(utc_offset))
-
-
 def next_occurrence(day: str, time_str: str) -> datetime:
-    """Return the next datetime (tz-aware) for the given weekday + time."""
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
     target_weekday = DAY_MAP[day]
@@ -115,46 +119,64 @@ def next_occurrence(day: str, time_str: str) -> datetime:
     days_ahead = (target_weekday - now.weekday()) % 7
     candidate = now.replace(hour=h, minute=m, second=0, microsecond=0) + timedelta(days=days_ahead)
 
-    # If that moment has already passed today, push to next week
     if candidate <= now:
         candidate += timedelta(weeks=1)
 
     return candidate
 
 
-def restart_loop(day: str, time_str: str):
-    weekly_ping.change_interval(time=parse_ping_time(time_str))
-    if weekly_ping.is_running():
-        weekly_ping.restart()
-    else:
-        weekly_ping.start()
-
-
 # ── Background task ────────────────────────────────────────────────────────────
 
-@tasks.loop(hours=24)   # placeholder — overridden on startup / set
-async def weekly_ping():
-    meeting = load_meeting()
-    if meeting is None:
+_reminder_day: str | None = None
+_sent_reminders: set = set()
+
+@tasks.loop(minutes=1)
+async def reminder_loop():
+    global _reminder_day, _sent_reminders
+
+    meetings = load_meetings()
+    if not meetings:
         return
 
     tz = pytz.timezone(TIMEZONE)
     now = datetime.now(tz)
-    if now.weekday() != DAY_MAP.get(meeting["day"], -1):
-        return
+    today = now.strftime("%Y-%m-%d")
 
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel is None:
-        print(f"[ERROR] Could not find channel {CHANNEL_ID}")
-        return
+    if today != _reminder_day:
+        _reminder_day = today
+        _sent_reminders = set()
 
-    role = channel.guild.get_role(ROLE_ID)
-    if role is None:
-        print(f"[ERROR] Could not find role {ROLE_ID}")
-        return
+    to_remove = []
+    for meeting in meetings:
+        if now.weekday() != DAY_MAP.get(meeting["day"], -1):
+            continue
 
-    await channel.send(f"{role.mention} {MESSAGE}")
-    print(f"[{now.strftime('%Y-%m-%d %H:%M')}] Pinged @{role.name} in #{channel.name}")
+        channel = bot.get_channel(CHANNEL_ID)
+        if channel is None:
+            continue
+
+        role = channel.guild.get_role(meeting.get("role_id", ROLE_ID))
+        mention = role.mention if role else ""
+
+        h, m = map(int, meeting["time"].split(":"))
+        meeting_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        early_dt = meeting_dt - timedelta(minutes=5)
+        mid = meeting["id"]
+
+        if now.hour == early_dt.hour and now.minute == early_dt.minute and f"{mid}_5min" not in _sent_reminders:
+            _sent_reminders.add(f"{mid}_5min")
+            await channel.send(f"{mention} ⏰ Meeting starts in **5 minutes**!")
+            print(f"[{today}] Sent 5-minute warning for meeting {mid}")
+
+        if now.hour == meeting_dt.hour and now.minute == meeting_dt.minute and f"{mid}_now" not in _sent_reminders:
+            _sent_reminders.add(f"{mid}_now")
+            await channel.send(f"{mention} {MESSAGE}")
+            print(f"[{today}] Sent meeting ping for meeting {mid}")
+            if not meeting.get("repeat", True):
+                to_remove.append(mid)
+
+    if to_remove:
+        save_meetings([m for m in meetings if m["id"] not in to_remove])
 
 
 # ── Bot setup ──────────────────────────────────────────────────────────────────
@@ -365,52 +387,12 @@ async def on_member_join(member):
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     await fetch_bad_words()
-    meeting = load_meeting()
-    if meeting:
-        restart_loop(meeting["day"], meeting["time"])
-        print(f"Resuming weekly ping: {meeting['day'].capitalize()} at {meeting['time']} ({TIMEZONE})")
-    else:
-        print("No meeting scheduled yet. Use '!cp meeting set' to configure one.")
+    reminder_loop.start()
+    meetings = load_meetings()
+    print(f"Loaded {len(meetings)} meeting(s).")
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
-
-@bot.group(name="meeting", invoke_without_command=True)
-async def meeting(ctx):
-    await ctx.send("Usage: `@segmund meeting reminder` or `@segmund meeting set <day> <HH:MM>`")
-
-
-@meeting.command(name="reminder")
-async def meeting_reminder(ctx):
-    """Show when the next meeting ping will fire."""
-    data = load_meeting()
-    if data is None:
-        await ctx.send("❌ No meeting is scheduled yet. Use `@segmund meeting set <day> <HH:MM>` to set one.")
-        return
-
-    nxt = next_occurrence(data["day"], data["time"])
-    tz = pytz.timezone(TIMEZONE)
-    now = datetime.now(tz)
-    delta = nxt - now
-
-    days = delta.days
-    hours, remainder = divmod(delta.seconds, 3600)
-    minutes = remainder // 60
-
-    parts = []
-    if days:
-        parts.append(f"{days}d")
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes or not parts:
-        parts.append(f"{minutes}m")
-    countdown = " ".join(parts)
-
-    await ctx.send(
-        f"📅 Next meeting ping: **{data['day'].capitalize()}** at **{data['time']}** ({TIMEZONE})\n"
-        f"⏰ That's in **{countdown}** ({nxt.strftime('%a %d %b %Y, %H:%M')})"
-    )
-
 
 def has_committee_role():
     async def predicate(ctx):
@@ -418,19 +400,40 @@ def has_committee_role():
             return True
         if any(r.id == COMMITTEE_ROLE_ID for r in ctx.author.roles):
             return True
-        raise commands.CheckFailure("You need the @committee role to set the meeting time.")
+        raise commands.CheckFailure("You need the @committee role to manage meetings.")
     return commands.check(predicate)
 
 
-@meeting.command(name="set")
+def _countdown(delta: timedelta) -> str:
+    days = delta.days
+    hours, remainder = divmod(delta.seconds, 3600)
+    minutes = remainder // 60
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or not parts:
+        parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+@bot.group(name="meeting", invoke_without_command=True)
+async def meeting(ctx):
+    await ctx.send(
+        "📅 **Meeting commands:**\n"
+        "`@segmund meeting add <day> <HH:MM> <yes/no> [@role]` — add a meeting\n"
+        "`@segmund meeting remove <id>` — remove a meeting\n"
+        "`@segmund meeting list` — list all scheduled meetings\n"
+        "`@segmund meeting reminder` — show countdowns to next occurrences"
+    )
+
+
+@meeting.command(name="add")
 @has_committee_role()
-async def meeting_set(ctx, day: str = None, meeting_time: str = None):
-    """Set the weekly meeting ping. Requires @committee role.
-    Usage: @segmund meeting set <day> <HH:MM>
-    Example: @segmund meeting set monday 18:00
-    """
+async def meeting_add(ctx, day: str = None, meeting_time: str = None, repeat: str = "yes", role: discord.Role = None):
     if day is None or meeting_time is None:
-        await ctx.send("Usage: `@segmund meeting set <day> <HH:MM>`\nExample: `@segmund meeting set monday 18:00`")
+        await ctx.send("Usage: `@segmund meeting add <day> <HH:MM> <yes/no> [@role]`")
         return
 
     day = day.lower()
@@ -445,19 +448,99 @@ async def meeting_set(ctx, day: str = None, meeting_time: str = None):
         await ctx.send("❌ Invalid time format. Use 24h `HH:MM`, e.g. `18:00`.")
         return
 
-    save_meeting(day, meeting_time)
-    restart_loop(day, meeting_time)
+    if repeat.lower() not in ("yes", "no"):
+        await ctx.send("❌ Repeat must be `yes` or `no`.")
+        return
 
+    role_id = role.id if role else ROLE_ID
+    meetings = load_meetings()
+    new_meeting = {
+        "id": next_meeting_id(meetings),
+        "day": day,
+        "time": meeting_time,
+        "repeat": repeat.lower() == "yes",
+        "role_id": role_id,
+    }
+    meetings.append(new_meeting)
+    save_meetings(meetings)
+
+    role_mention = role.mention if role else f"<@&{ROLE_ID}>"
+    repeat_str = "weekly" if new_meeting["repeat"] else "one-time"
     nxt = next_occurrence(day, meeting_time)
     await ctx.send(
-        f"✅ Meeting ping set to every **{day.capitalize()}** at **{meeting_time}** ({TIMEZONE}).\n"
+        f"✅ Meeting added (ID **{new_meeting['id']}**) — "
+        f"**{day.capitalize()}** at **{meeting_time}** ({TIMEZONE}), "
+        f"{repeat_str}, pinging {role_mention}\n"
         f"Next ping: {nxt.strftime('%a %d %b %Y, %H:%M')}"
     )
 
 
-@meeting_set.error
-async def meeting_set_error(ctx, error):
+@meeting_add.error
+async def meeting_add_error(ctx, error):
     await ctx.send(f"❌ {error}")
+
+
+@meeting.command(name="remove")
+@has_committee_role()
+async def meeting_remove(ctx, meeting_id: int = None):
+    if meeting_id is None:
+        await ctx.send("Usage: `@segmund meeting remove <id>`")
+        return
+
+    meetings = load_meetings()
+    updated = [m for m in meetings if m["id"] != meeting_id]
+    if len(updated) == len(meetings):
+        await ctx.send(f"❌ No meeting with ID **{meeting_id}** found.")
+        return
+
+    save_meetings(updated)
+    await ctx.send(f"✅ Meeting **{meeting_id}** removed.")
+
+
+@meeting_remove.error
+async def meeting_remove_error(ctx, error):
+    await ctx.send(f"❌ {error}")
+
+
+@meeting.command(name="list")
+async def meeting_list(ctx):
+    meetings = load_meetings()
+    if not meetings:
+        await ctx.send("No meetings scheduled. Use `@segmund meeting add` to add one.")
+        return
+
+    embed = discord.Embed(title="Scheduled Meetings", color=0x1D82B5)
+    for m in meetings:
+        role_mention = f"<@&{m['role_id']}>"
+        repeat_str = "weekly" if m.get("repeat", True) else "one-time"
+        embed.add_field(
+            name=f"ID {m['id']} — {m['day'].capitalize()} at {m['time']}",
+            value=f"{repeat_str} · {role_mention}",
+            inline=False,
+        )
+    await ctx.send(embed=embed)
+
+
+@meeting.command(name="reminder")
+async def meeting_reminder(ctx):
+    meetings = load_meetings()
+    if not meetings:
+        await ctx.send("No meetings scheduled.")
+        return
+
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz)
+    embed = discord.Embed(title="Upcoming Meeting Pings", color=0x1D82B5)
+    for m in meetings:
+        nxt = next_occurrence(m["day"], m["time"])
+        delta = nxt - now
+        role_mention = f"<@&{m['role_id']}>"
+        embed.add_field(
+            name=f"ID {m['id']} — {m['day'].capitalize()} at {m['time']}",
+            value=f"⏰ In **{_countdown(delta)}** ({nxt.strftime('%a %d %b %Y, %H:%M')})\n{role_mention}",
+            inline=False,
+        )
+    await ctx.send(embed=embed)
 
 
 @bot.command(name="testping")
@@ -488,9 +571,36 @@ async def about(ctx):
 @bot.command(name="committee")
 async def committee(ctx):
     """List the current committee members."""
+    data = None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(COMMITTEE_URL, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+    except Exception:
+        pass
+
+    if data is None:
+        data = COMMITTEE_FALLBACK
+
     embed = discord.Embed(title="UMCPC Committee", color=0x1D82B5)
-    for member in COMMITTEE:
-        embed.add_field(name=member["role"], value=member["name"], inline=False)
+
+    executives = data.get("executives", [])
+    if executives:
+        embed.add_field(
+            name="__Executives__",
+            value="\n".join(f"**{m['title']}** — {m['name']}" for m in executives),
+            inline=False,
+        )
+
+    general = data.get("general", [])
+    if general:
+        embed.add_field(
+            name="__General Committee__",
+            value="\n".join(f"**{m['title']}** — {m['name']}" for m in general),
+            inline=False,
+        )
+
     await ctx.send(embed=embed)
 
 
@@ -581,8 +691,10 @@ async def help_command(ctx):
     embed.add_field(
         name="📅  Meetings",
         value=(
-            "`meeting reminder` — Time until the next meeting ping\n"
-            "`meeting set <day> <HH:MM>` — Set the weekly ping *(committee only)*"
+            "`meeting list` — Show all scheduled meetings\n"
+            "`meeting reminder` — Countdowns to next pings\n"
+            "`meeting add <day> <HH:MM> <yes/no> [@role]` — Add a meeting *(committee only)*\n"
+            "`meeting remove <id>` — Remove a meeting *(committee only)*"
         ),
         inline=False,
     )
