@@ -21,6 +21,7 @@ DATA_FILE = "meetings.json"
 CLUB_FILE = "club_info.json"
 STRIKES_FILE = "strikes.json"
 BAD_WORDS_URL = "https://raw.githubusercontent.com/awdev1/better-profane-words/main/words.json"
+ALLOWED_WORDS = {"damn", "wtf", "ass", "crap", "fuck", "shit", "wtaf"}
 
 _bad_words_pattern: re.Pattern | None = None
 
@@ -31,7 +32,7 @@ COMMITTEE_FALLBACK = {
         {"title": "President",      "name": "Qirui (David) Wang"},
         {"title": "Vice President", "name": "Honey Raut"},
         {"title": "Secretary",      "name": "Yunnuo (Lionel) Liu"},
-        {"title": "Treasurer",      "name": "Jummana Shim"},
+        {"title": "Treasurer",      "name": "Jummana Al-Shimary"},
     ],
     "general": [],
 }
@@ -93,7 +94,7 @@ async def fetch_bad_words():
             async with session.get(BAD_WORDS_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
-                    words = [entry["word"] for entry in data if "word" in entry]
+                    words = [entry["word"] for entry in data if "word" in entry and entry["word"].lower() not in ALLOWED_WORDS]
                     pattern = "|".join(re.escape(w) for w in words)
                     _bad_words_pattern = re.compile(rf"\b({pattern})\b", re.IGNORECASE)
                     print(f"[moderation] Loaded {len(words)} bad words.")
@@ -333,7 +334,7 @@ async def on_message(message):
     if "mobile" in message.content.lower():
         await message.channel.send("mobile reference")
 
-    if "lion" in message.content.lower():
+    if "lion" in message.content.lower() and "lionel" not in message.content.lower():
         try:
             await message.add_reaction("🍇")
         except discord.NotFound:
